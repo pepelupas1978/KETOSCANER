@@ -1,0 +1,37 @@
+[
+  {
+    "code": "8410069000018",
+    "name": "Aceite de Oliva Virgen Extra Carbonell",
+    "carbs": 0,
+    "keto": true,
+    "category": "Aceites"
+  },
+  {
+    "code": "8480000100012",
+    "name": "Huevo L Hacendado",
+    "carbs": 0.5,
+    "keto": true,
+    "category": "Huevos"
+  },
+  {
+    "code": "8480000200022",
+    "name": "Queso Manchego Curado Hacendado",
+    "carbs": 1.0,
+    "keto": true,
+    "category": "Lácteos"
+  },
+  {
+    "code": "8480000300032",
+    "name": "Mantequilla sin sal Hacendado",
+    "carbs": 0.6,
+    "keto": true,
+    "category": "Lácteos"
+  },
+  {
+    "code": "8480000800082",
+    "name": "Pan de Molde Blanco Hacendado",
+    "carbs": 47.0,
+    "keto": false,
+    "category": "Panadería"
+  }
+]
