@@ -1,34 +1,46 @@
-<!-- Librería ZXing para lectura de códigos de barras EAN en tiempo real -->
-<script src="https://unpkg.com/@zxing/library@latest"></script>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keto Scanner UE</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+</head>
+<body>
 
-<div class="app-card">
-  <div class="header">
-    <div class="badge">Keto Scanner UE</div>
-    <h1>Evaluador Nutricional</h1>
-  </div>
-
-  <!-- Visor de la Cámara -->
-  <div class="viewport">
-    <video id="webcam" autoplay playsinline muted></video>
-    <div class="laser" id="laser"></div>
-    <div class="placeholder" id="placeholder">
-      Cámara desactivada<br>Pulsa el botón para activar el escáner
+  <div class="app-card">
+    <div class="header">
+      <div class="badge">Keto Scanner UE</div>
+      <h1>Evaluador Nutricional</h1>
     </div>
+
+    <!-- Visor de la Cámara -->
+    <div class="viewport">
+      <video id="webcam" autoplay playsinline muted></video>
+      <div class="laser" id="laser"></div>
+      <div class="placeholder" id="placeholder">
+        Cámara desactivada<br>Pulsa el botón para activar el escáner
+      </div>
+    </div>
+
+    <!-- Búsqueda Manual -->
+    <div class="manual-search">
+      <input type="number" id="ean-input" placeholder="Ej: 8437019803032">
+      <button id="search-btn" class="btn-search">Buscar</button>
+    </div>
+
+    <!-- Resultados -->
+    <div class="results">
+      <div class="product-title" id="product-name">Esperando lectura...</div>
+      <div class="product-info" id="status-text">Apunta al código EAN de un producto</div>
+      <div class="verdict-box" id="verdict-text">-</div>
+    </div>
+
+    <!-- Botón de Encendido -->
+    <button id="camera-btn" class="btn-primary">Activar Escáner de Cámara</button>
   </div>
 
-  <!-- Búsqueda Manual de Código de Barras -->
-  <div class="manual-search">
-    <input type="number" id="ean-input" placeholder="Ej: 8437019803032 (Huevos L)">
-    <button id="search-btn" class="btn-search">Buscar</button>
-  </div>
-
-  <!-- Resultados -->
-  <div class="results">
-    <div class="product-title" id="product-name">Esperando lectura...</div>
-    <div class="product-info" id="status-text">Apunta al código EAN de un producto</div>
-    <div class="verdict-box" id="verdict-text">-</div>
-  </div>
-
-  <!-- Botón de Encendido -->
-  <button id="camera-btn" class="btn-primary">Activar Escáner de Cámara</button>
-</div>
+  <script src="script.js"></script>
+</body>
+</html>
