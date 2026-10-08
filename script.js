@@ -1,154 +1,361 @@
+const cameraBtn = document.getElementById('camera-btn');
+const searchBtn = document.getElementById('search-btn');
+const eanInput = document.getElementById('ean-input');
+const video = document.getElementById('webcam');
+const laser = document.getElementById('laser');
+const placeholder = document.getElementById('placeholder');
+const productName = document.getElementById('product-name');
+const statusText = document.getElementById('status-text');
+const verdictText = document.getElementById('verdict-text');
+
 let codeReader = null;
+let isScanning = false;
+let lastScannedBarcode = null;
+let isProcessing = false; // Evita peticiones duplicadas consecutivas
 
-document.addEventListener('DOMContentLoaded', () => {
-    const searchBtn = document.getElementById('search-btn');
-    const eanInput = document.getElementById('ean-input');
-    const cameraBtn = document.getElementById('camera-btn');
+// Tono de confirmación cuando escanea correctamente
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch(e){}
+}
 
-    if (searchBtn && eanInput) {
-        searchBtn.addEventListener('click', () => {
-            const ean = eanInput.value.trim();
-            if (ean) buscarProducto(ean);
-        });
+if (typeof ZXing !== 'undefined') {
+  // Configuración optimizada para EAN y lectura en directo
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A
+  ]);
+  codeReader = new ZXing.BrowserMultiFormatReader(hints);
+}
 
-        eanInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const ean = eanInput.value.trim();
-                if (ean) buscarProducto(ean);
-            }
-        });
+// Consulta a Open Food Facts
+async function fetchProductData(barcode) {
+  if (isProcessing) return;
+  isProcessing = true;
+  lastScannedBarcode = barcode;
+  
+  playBeep();
+
+  productName.textContent = "Consultando base de datos...";
+  statusText.textContent = EAN: ${barcode};
+  verdictText.textContent = "PROCESANDO";
+  verdictText.style.color = "#eab308";
+  verdictText.style.background = "#1e293b";
+
+  try {
+    const response = await fetch(https://world.openfoodfacts.org/api/v0/product/${barcode}.json);
+    const data = await response.json();
+
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      const name = p.product_name || p.product_name_es || "Producto sin nombre";
+      const carbs = p.nutriments && p.nutriments['carbohydrates_100g'] !== undefined 
+        ? p.nutriments['carbohydrates_100g'] 
+        : null;
+
+      productName.textContent = name;
+
+      if (carbs !== null) {
+        evaluateKeto(carbs);
+      } else {
+        statusText.textContent = "Sin datos de carbohidratos desglosados";
+        verdictText.textContent = "INDETERMINADO";
+        verdictText.style.color = "#94a3b8";
+      }
+    } else {
+      productName.textContent = "Producto no encontrado";
+      statusText.textContent = El código ${barcode} no está en Open Food Facts;
+      verdictText.textContent = "NO REGISTRADO";
+      verdictText.style.color = "#94a3b8";
     }
+  } catch (error) {
+    productName.textContent = "Error de conexión";
+    statusText.textContent = "Comprueba tu conexión a internet";
+    verdictText.textContent = "ERROR";
+    verdictText.style.color = "#ef4444";
+  } finally {
+    // Permitir nuevo escaneo tras 2 segundos
+    setTimeout(() => {
+      isProcessing = false;
+    }, 2000);
+  }
+}
 
-    if (cameraBtn) {
-        cameraBtn.addEventListener('click', toggleCamera);
-    }
+// Evaluación Keto UE
+function evaluateKeto(carbs) {
+  statusText.textContent = Carbohidratos (UE): ${carbs}g por cada 100g;
+
+  if (carbs <= 5.0) {
+    verdictText.textContent = "APTO KETO";
+    verdictText.style.color = "#22c55e";
+    verdictText.style.background = "rgba(34, 197, 94, 0.1)";
+  } else if (carbs <= 10.0) {
+    verdictText.textContent = "PRECAUCIÓN / MODERADO";
+    verdictText.style.color = "#eab308";
+    verdictText.style.background = "rgba(234, 179, 8, 0.1)";
+  } else {
+    verdictText.textContent = "NO APTO KETO";
+    verdictText.style.color = "#ef4444";
+    verdictText.style.background = "rgba(239, 68, 68, 0.1)";
+  }
+}
+
+// Control del Escáner
+cameraBtn.addEventListener('click', () => {
+  if (!isScanning) {
+    startCamera();
+  } else {
+    stopCamera();
+  }
 });
 
-function evaluarKeto(carbs, azucares) {
-    if (carbs === null || carbs === undefined || isNaN(carbs)) {
-        return "❓ DATOS INCOMPLETOS";
-    }
-    const c = parseFloat(carbs);
-    const a = parseFloat(azucares || 0);
+function startCamera() {
+  if (!codeReader) {
+    alert("Cargando componentes... Reintentar.");
+    return;
+  }
 
-    if (c <= 5 && a <= 2) {
-        return "✅ APTO KETO (Bajo en carbohidratos)";
-    } else if (c <= 10) {
-        return "⚠️ CONSUMO MODERADO (Revisar porción)";
+  video.style.display = 'block';
+  laser.style.display = 'block';
+  placeholder.style.display = 'none';
+
+  productName.textContent = 'Encuadra el código de barras';
+  statusText.textContent = 'Buscando código...';
+  verdictText.textContent = "-";
+  verdictText.style.color = "#94a3b8";
+
+  cameraBtn.textContent = 'Detener Cámara';
+  cameraBtn.classList.add('active');
+  isScanning = true;
+
+  // Escaneo continuo optimizado
+  codeReader.decodeFromVideoDevice(undefined, 'webcam', (result, err) => {
+    if (result && result.getText() !== lastScannedBarcode && !isProcessing) {
+      fetchProductData(result.getText());
+    }
+  }).catch((err) => {
+    alert("Permiso de cámara denegado o no disponible.");
+    stopCamera();
+  });
+}
+
+function stopCamera() {
+  if (codeReader) {
+    codeReader.reset();
+  }
+  video.style.display = 'none';
+  laser.style.display = 'none';
+  placeholder.style.display = 'block';
+
+  productName.textContent = 'Esperando lectura...';
+  statusText.textContent = 'Apunta al código EAN de un producto';
+  verdictText.textContent = "-";
+  verdictText.style.color = "#94a3b8";
+  verdictText.style.background = "#1e293b";
+
+  cameraBtn.textContent = 'Activar Escáner de Cámara';
+  cameraBtn.classList.remove('active');
+  isScanning = false;
+  lastScannedBarcode = null;
+  isProcessing = false;
+}
+
+// Búsqueda Manual
+searchBtn.addEventListener('click', () => {
+  const code = eanInput.value.trim();
+  if (code) {
+    isProcessing = false;
+    fetchProductData(code);
+  }
+});
+
+JSON
+
+const cameraBtn = document.getElementById('camera-btn');
+const searchBtn = document.getElementById('search-btn');
+const eanInput = document.getElementById('ean-input');
+const video = document.getElementById('webcam');
+const laser = document.getElementById('laser');
+const placeholder = document.getElementById('placeholder');
+const productName = document.getElementById('product-name');
+const statusText = document.getElementById('status-text');
+const verdictText = document.getElementById('verdict-text');
+
+let codeReader = null;
+let isScanning = false;
+let lastScannedBarcode = null;
+let isProcessing = false; // Evita peticiones duplicadas consecutivas
+
+// Tono de confirmación cuando escanea correctamente
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch(e){}
+}
+
+if (typeof ZXing !== 'undefined') {
+  // Configuración optimizada para EAN y lectura en directo
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A
+  ]);
+  codeReader = new ZXing.BrowserMultiFormatReader(hints);
+}
+
+// Consulta a Open Food Facts
+async function fetchProductData(barcode) {
+  if (isProcessing) return;
+  isProcessing = true;
+  lastScannedBarcode = barcode;
+  
+  playBeep();
+
+  productName.textContent = "Consultando base de datos...";
+  statusText.textContent = EAN: ${barcode};
+  verdictText.textContent = "PROCESANDO";
+  verdictText.style.color = "#eab308";
+  verdictText.style.background = "#1e293b";
+
+  try {
+    const response = await fetch(https://world.openfoodfacts.org/api/v0/product/${barcode}.json);
+    const data = await response.json();
+
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      const name = p.product_name || p.product_name_es || "Producto sin nombre";
+      const carbs = p.nutriments && p.nutriments['carbohydrates_100g'] !== undefined 
+        ? p.nutriments['carbohydrates_100g'] 
+        : null;
+
+      productName.textContent = name;
+
+      if (carbs !== null) {
+        evaluateKeto(carbs);
+      } else {
+        statusText.textContent = "Sin datos de carbohidratos desglosados";
+        verdictText.textContent = "INDETERMINADO";
+        verdictText.style.color = "#94a3b8";
+      }
     } else {
-        return "❌ NO KETO (Alto en carbohidratos)";
+      productName.textContent = "Producto no encontrado";
+      statusText.textContent = El código ${barcode} no está en Open Food Facts;
+      verdictText.textContent = "NO REGISTRADO";
+      verdictText.style.color = "#94a3b8";
     }
+  } catch (error) {
+    productName.textContent = "Error de conexión";
+    statusText.textContent = "Comprueba tu conexión a internet";
+    verdictText.textContent = "ERROR";
+    verdictText.style.color = "#ef4444";
+  } finally {
+    // Permitir nuevo escaneo tras 2 segundos
+    setTimeout(() => {
+      isProcessing = false;
+    }, 2000);
+  }
 }
 
-async function buscarProducto(ean) {
-    const statusText = document.getElementById('status-text');
-    const productName = document.getElementById('product-name');
-    const verdictText = document.getElementById('verdict-text');
+// Evaluación Keto UE
+function evaluateKeto(carbs) {
+  statusText.textContent = Carbohidratos (UE): ${carbs}g por cada 100g;
 
-    if (!statusText || !productName || !verdictText) return;
-
-    statusText.textContent = "Buscando información...";
-    productName.textContent = EAN: ${ean};
-    verdictText.textContent = "-";
-
-    // 1. Memoria local
-    const localSaved = localStorage.getItem(ean_${ean});
-    if (localSaved) {
-        const prod = JSON.parse(localSaved);
-        productName.textContent = prod.nombre;
-        statusText.textContent = Carbohidratos: ${prod.carbohidratos}g | Azúcares: ${prod.azucares}g (Dispositivo);
-        verdictText.textContent = evaluarKeto(prod.carbohidratos, prod.azucares);
-        return;
-    }
-
-    // 2. Archivo local JSON
-    try {
-        const localResponse = await fetch('productos_base.json');
-        if (localResponse.ok) {
-            const localData = await localResponse.json();
-            if (localData[ean]) {
-                const p = localData[ean];
-                productName.textContent = p.nombre;
-                statusText.textContent = Carbohidratos: ${p.carbohidratos}g | Azúcares: ${p.azucares}g (Base Local);
-                verdictText.textContent = evaluarKeto(p.carbohidratos, p.azucares);
-                return;
-            }
-        }
-    } catch (e) {
-        console.log("Consultando Open Food Facts...");
-    }
-
-    // 3. API Open Food Facts
-    try {
-        const apiResponse = await fetch(https://world.openfoodfacts.org/api/v2/product/${ean}.json);
-        if (apiResponse.ok) {
-            const apiData = await apiResponse.json();
-            if (apiData.status === 1 && apiData.product) {
-                const prod = apiData.product;
-                const nombre = prod.product_name_es || prod.product_name || "Producto sin nombre";
-                const nutriments = prod.nutriments || {};
-                
-                const carbs = nutriments.carbohydrates_100g ?? nutriments.carbohydrates;
-                const azucares = nutriments.sugars_100g ?? nutriments.sugars ?? 0;
-
-                productName.textContent = nombre;
-
-                if (carbs !== undefined && carbs !== null) {
-                    statusText.textContent = Carbohidratos: ${carbs}g / 100g | Azúcares: ${azucares}g;
-                    verdictText.textContent = evaluarKeto(carbs, azucares);
-
-                    const itemToSave = { nombre: nombre, carbohidratos: carbs, azucares: azucares };
-                    localStorage.setItem(ean_${ean}, JSON.stringify(itemToSave));
-                } else {
-                    statusText.textContent = "Producto sin información nutricional.";
-                    verdictText.textContent = "❓ DATOS INCOMPLETOS";
-                }
-                return;
-            }
-        }
-        
-        productName.textContent = "Producto no encontrado";
-        statusText.textContent = "El código no está registrado en la base de datos.";
-        verdictText.textContent = "❌ SIN REGISTRO";
-
-    } catch (error) {
-        statusText.textContent = "Error de conexión a internet.";
-        verdictText.textContent = "⚠️ ERROR DE RED";
-    }
+  if (carbs <= 5.0) {
+    verdictText.textContent = "APTO KETO";
+    verdictText.style.color = "#22c55e";
+    verdictText.style.background = "rgba(34, 197, 94, 0.1)";
+  } else if (carbs <= 10.0) {
+    verdictText.textContent = "PRECAUCIÓN / MODERADO";
+    verdictText.style.color = "#eab308";
+    verdictText.style.background = "rgba(234, 179, 8, 0.1)";
+  } else {
+    verdictText.textContent = "NO APTO KETO";
+    verdictText.style.color = "#ef4444";
+    verdictText.style.background = "rgba(239, 68, 68, 0.1)";
+  }
 }
 
-function toggleCamera() {
-    const laser = document.getElementById('laser');
-    const placeholder = document.getElementById('placeholder');
-    const cameraBtn = document.getElementById('camera-btn');
+// Control del Escáner
+cameraBtn.addEventListener('click', () => {
+  if (!isScanning) {
+    startCamera();
+  } else {
+    stopCamera();
+  }
+});
 
-    if (codeReader) {
-        codeReader.reset();
-        codeReader = null;
-        if (laser) laser.style.display = 'none';
-        if (placeholder) placeholder.style.display = 'block';
-        if (cameraBtn) cameraBtn.textContent = 'Activar Escáner de Cámara';
-        return;
+function startCamera() {
+  if (!codeReader) {
+    alert("Cargando componentes... Reintentar.");
+    return;
+  }
+
+  video.style.display = 'block';
+  laser.style.display = 'block';
+  placeholder.style.display = 'none';
+
+  productName.textContent = 'Encuadra el código de barras';
+  statusText.textContent = 'Buscando código...';
+  verdictText.textContent = "-";
+  verdictText.style.color = "#94a3b8";
+
+  cameraBtn.textContent = 'Detener Cámara';
+  cameraBtn.classList.add('active');
+  isScanning = true;
+
+  // Escaneo continuo optimizado
+  codeReader.decodeFromVideoDevice(undefined, 'webcam', (result, err) => {
+    if (result && result.getText() !== lastScannedBarcode && !isProcessing) {
+      fetchProductData(result.getText());
     }
-
-    if (typeof ZXing === 'undefined') {
-        alert("La librería de la cámara aún está cargando. Inténtalo en unos segundos.");
-        return;
-    }
-
-    codeReader = new ZXing.BrowserMultiFormatReader();
-    if (placeholder) placeholder.style.display = 'none';
-    if (laser) laser.style.display = 'block';
-    if (cameraBtn) cameraBtn.textContent = 'Desactivar Cámara';
-
-    codeReader.decodeFromVideoDevice(null, 'webcam', (result, err) => {
-        if (result) {
-            const eanScanned = result.getText();
-            buscarProducto(eanScanned);
-        }
-    }).catch((err) => {
-        console.error("Error cámara:", err);
-        alert("No se pudo acceder a la cámara. Revisa los permisos de tu navegador en el móvil.");
-        toggleCamera();
-    });
+  }).catch((err) => {
+    alert("Permiso de cámara denegado o no disponible.");
+    stopCamera();
+  });
 }
+
+function stopCamera() {
+  if (codeReader) {
+    codeReader.reset();
+  }
+  video.style.display = 'none';
+  laser.style.display = 'none';
+  placeholder.style.display = 'block';
+
+  productName.textContent = 'Esperando lectura...';
+  statusText.textContent = 'Apunta al código EAN de un producto';
+  verdictText.textContent = "-";
+  verdictText.style.color = "#94a3b8";
+  verdictText.style.background = "#1e293b";
+
+  cameraBtn.textContent = 'Activar Escáner de Cámara';
+  cameraBtn.classList.remove('active');
+  isScanning = false;
+  lastScannedBarcode = null;
+  isProcessing = false;
+}
+
+// Búsqueda Manual
+searchBtn.addEventListener('click', () => {
+  const code = eanInput.value.trim();
+  if (code) {
+    isProcessing = false;
+    fetchProductData(code);
+  }
+});
