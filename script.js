@@ -86,7 +86,7 @@ async function fetchProductData(barcode) {
       if (localData[barcode]) {
         const p = localData[barcode];
         productName.textContent = p.nombre;
-        evaluateKeto(p.carbohidratos);
+        evaluateKeto(p.carbohidratos, p.azucares ?? 0);
         isProcessing = false;
         return;
       }
@@ -102,11 +102,12 @@ async function fetchProductData(barcode) {
       const p = data.product;
       const name = p.product_name_es || p.product_name || "Producto sin nombre";
       const carbs = p.nutriments ? (p.nutriments['carbohydrates_100g'] ?? p.nutriments['carbohydrates']) : null;
+      const sugars = p.nutriments ? (p.nutriments['sugars_100g'] ?? p.nutriments['sugars'] ?? 0) : 0;
 
       productName.textContent = name;
 
       if (carbs !== null && carbs !== undefined) {
-        evaluateKeto(carbs);
+        evaluateKeto(carbs, sugars);
       } else {
         statusText.textContent = "Sin datos de carbohidratos desglosados";
         verdictText.textContent = "INDETERMINADO";
@@ -130,24 +131,25 @@ async function fetchProductData(barcode) {
   }
 }
 
-function evaluateKeto(carbs) {
+function evaluateKeto(carbs, sugars = 0) {
   const statusText = document.getElementById('status-text');
   const verdictText = document.getElementById('verdict-text');
 
-  statusText.textContent = `Carbohidratos (UE): ${carbs}g por cada 100g`;
+  statusText.textContent = `Carbs: ${carbs}g | Azúcares: ${sugars}g (por 100g)`;
 
-  if (carbs <= 5.0) {
-    verdictText.textContent = "APTO KETO";
-    verdictText.style.color = "#22c55e";
-    verdictText.style.background = "rgba(34, 197, 94, 0.1)";
-  } else if (carbs <= 10.0) {
+  // Evaluación con filtro estricto para azúcares libres y zumos
+  if (sugars > 3.0 || carbs > 5.0) {
+    verdictText.textContent = "NO APTO KETO";
+    verdictText.style.color = "#ef4444";
+    verdictText.style.background = "rgba(239, 68, 68, 0.1)";
+  } else if (carbs > 2.5 || sugars > 1.5) {
     verdictText.textContent = "PRECAUCIÓN / MODERADO";
     verdictText.style.color = "#eab308";
     verdictText.style.background = "rgba(234, 179, 8, 0.1)";
   } else {
-    verdictText.textContent = "NO APTO KETO";
-    verdictText.style.color = "#ef4444";
-    verdictText.style.background = "rgba(239, 68, 68, 0.1)";
+    verdictText.textContent = "APTO KETO";
+    verdictText.style.color = "#22c55e";
+    verdictText.style.background = "rgba(34, 197, 94, 0.1)";
   }
 }
 
