@@ -1,13 +1,10 @@
-// Configuración del escáner de cámara
 let codeReader = null;
 
-// Inicialización de botones al cargar la página
 document.addEventListener('DOMContentLoaded', () => {
     const searchBtn = document.getElementById('search-btn');
     const eanInput = document.getElementById('ean-input');
     const cameraBtn = document.getElementById('camera-btn');
 
-    // Evento para botón de búsqueda manual
     if (searchBtn && eanInput) {
         searchBtn.addEventListener('click', () => {
             const ean = eanInput.value.trim();
@@ -22,13 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Evento para activar/desactivar la cámara
     if (cameraBtn) {
         cameraBtn.addEventListener('click', toggleCamera);
     }
 });
 
-// Evaluación de la dieta Keto según carbohidratos
 function evaluarKeto(carbs, azucares) {
     if (carbs === null || carbs === undefined || isNaN(carbs)) {
         return "❓ DATOS INCOMPLETOS";
@@ -45,27 +40,28 @@ function evaluarKeto(carbs, azucares) {
     }
 }
 
-// Búsqueda jerárquica: 1º Memoria Local -> 2º JSON GitHub -> 3º API Open Food Facts
 async function buscarProducto(ean) {
     const statusText = document.getElementById('status-text');
     const productName = document.getElementById('product-name');
     const verdictText = document.getElementById('verdict-text');
 
+    if (!statusText || !productName || !verdictText) return;
+
     statusText.textContent = "Buscando información...";
     productName.textContent = EAN: ${ean};
     verdictText.textContent = "-";
 
-    // 1. Buscar en la memoria del teléfono (Caché Local)
+    // 1. Memoria local
     const localSaved = localStorage.getItem(ean_${ean});
     if (localSaved) {
         const prod = JSON.parse(localSaved);
         productName.textContent = prod.nombre;
-        statusText.textContent = Carbohidratos: ${prod.carbohidratos}g | Azúcares: ${prod.azucares}g (Guardado en dispositivo);
+        statusText.textContent = Carbohidratos: ${prod.carbohidratos}g | Azúcares: ${prod.azucares}g (Dispositivo);
         verdictText.textContent = evaluarKeto(prod.carbohidratos, prod.azucares);
         return;
     }
 
-    // 2. Buscar en el archivo productos_base.json de GitHub
+    // 2. Archivo local JSON
     try {
         const localResponse = await fetch('productos_base.json');
         if (localResponse.ok) {
@@ -79,10 +75,10 @@ async function buscarProducto(ean) {
             }
         }
     } catch (e) {
-        console.log("Continuando a la búsqueda en internet...");
+        console.log("Consultando Open Food Facts...");
     }
 
-    // 3. Consultar la API global de Open Food Facts
+    // 3. API Open Food Facts
     try {
         const apiResponse = await fetch(https://world.openfoodfacts.org/api/v2/product/${ean}.json);
         if (apiResponse.ok) {
@@ -101,11 +97,10 @@ async function buscarProducto(ean) {
                     statusText.textContent = Carbohidratos: ${carbs}g / 100g | Azúcares: ${azucares}g;
                     verdictText.textContent = evaluarKeto(carbs, azucares);
 
-                    // Guardar resultado en el teléfono del usuario
                     const itemToSave = { nombre: nombre, carbohidratos: carbs, azucares: azucares };
                     localStorage.setItem(ean_${ean}, JSON.stringify(itemToSave));
                 } else {
-                    statusText.textContent = "Producto encontrado pero sin datos nutricionales.";
+                    statusText.textContent = "Producto sin información nutricional.";
                     verdictText.textContent = "❓ DATOS INCOMPLETOS";
                 }
                 return;
@@ -113,7 +108,7 @@ async function buscarProducto(ean) {
         }
         
         productName.textContent = "Producto no encontrado";
-        statusText.textContent = "El código EAN no está registrado en la base de datos.";
+        statusText.textContent = "El código no está registrado en la base de datos.";
         verdictText.textContent = "❌ SIN REGISTRO";
 
     } catch (error) {
@@ -122,7 +117,6 @@ async function buscarProducto(ean) {
     }
 }
 
-// Control del lector de cámara ZXing
 function toggleCamera() {
     const laser = document.getElementById('laser');
     const placeholder = document.getElementById('placeholder');
@@ -138,7 +132,7 @@ function toggleCamera() {
     }
 
     if (typeof ZXing === 'undefined') {
-        alert("La librería de la cámara aún no ha cargado. Inténtalo en unos segundos.");
+        alert("La librería de la cámara aún está cargando. Inténtalo en unos segundos.");
         return;
     }
 
@@ -153,8 +147,8 @@ function toggleCamera() {
             buscarProducto(eanScanned);
         }
     }).catch((err) => {
-        console.error("Error al acceder a la cámara:", err);
-        alert("No se pudo acceder a la cámara. Asegúrate de dar permisos en el navegador.");
+        console.error("Error cámara:", err);
+        alert("No se pudo acceder a la cámara. Revisa los permisos de tu navegador en el móvil.");
         toggleCamera();
     });
 }
